@@ -1,0 +1,80 @@
+{
+  "brand": "IPEK Superadmin",
+  "login": {
+    "title": "Staff sign in",
+    "subtitle": "Superadmin access only.",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "unauthorized": "This account is not authorized for the dashboard."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "catalog": "Catalog",
+    "departments": "Departments",
+    "categories": "Categories",
+    "brands": "Brands",
+    "colors": "Colors",
+    "sizes": "Sizes",
+    "seasons": "Seasons",
+    "products": "Products",
+    "sales": "Sales",
+    "orders": "Orders",
+    "discounts": "Discounts",
+    "people": "People",
+    "users": "Users",
+    "engagement": "Engagement",
+    "notifications": "Notifications",
+    "logout": "Log out"
+  },
+  "common": {
+    "search": "Search",
+    "add": "Add",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "empty": "Nothing here yet.",
+    "loading": "Loading…",
+    "nameEn": "Name (EN)",
+    "nameAr": "Name (AR)",
+    "nameTr": "Name (TR)",
+    "visible": "Visible",
+    "active": "Active",
+    "actions": "Actions",
+    "page": "Page",
+    "of": "of",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "dash": {
+    "ordersToday": "Orders today",
+    "pending": "Pending orders",
+    "revenue": "Revenue this month",
+    "lowStock": "Low stock variants",
+    "chart": "Orders · last 30 days",
+    "bestsellers": "Bestsellers"
+  },
+  "orders": {
+    "confirm": "Confirm order",
+    "confirmed": "Confirmed",
+    "whatsapp": "Create WhatsApp order",
+    "status": "Status",
+    "payment": "Payment",
+    "source": "Source",
+    "guest": "Guest",
+    "proof": "Cliq proof"
+  },
+  "users": {
+    "deactivate": "Deactivate",
+    "activate": "Activate",
+    "role": "Change role",
+    "promote": "This changes staff access. Continue?"
+  },
+  "notify": {
+    "broadcast": "Broadcast",
+    "sendAll": "Send to all users",
+    "confirm": "This reaches every customer. Send anyway?"
+  }
+}

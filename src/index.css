@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-cream text-ink antialiased;
+}
+
+.skeleton {
+  @apply animate-pulse rounded-md bg-sand/80;
+}
