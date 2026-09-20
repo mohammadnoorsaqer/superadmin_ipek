@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { apiGet, apiSend, toastError } from '../lib/api';
-import { emptyPage, type Paginated } from '../lib/utils';
-import { Button, Drawer, Input, Skeleton } from '../components/ui';
+import { cn, emptyPage, type Paginated } from '../lib/utils';
+import { Badge, Button, Dialog, Input, LangTabs, Skeleton, type Lang } from '../components/ui';
+import { useConfirm } from '../lib/confirm';
 
 type Named = {
   id: string;
@@ -25,6 +26,79 @@ type Named = {
   hip_cm_max?: number;
   department?: { name_en: string };
 };
+
+function clampByte(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function hexToRgb(hex?: string) {
+  const raw = String(hex || '#B4532A').replace('#', '').trim();
+  const full =
+    raw.length === 3
+      ? raw
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : raw.padEnd(6, '0').slice(0, 6);
+  const n = Number.parseInt(full, 16);
+  if (Number.isNaN(n)) return { r: 180, g: 83, b: 42 };
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+  return `#${[r, g, b]
+    .map((v) => clampByte(v).toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()}`;
+}
+
+function ColorRgbFields({ defaultHex }: { defaultHex?: string }) {
+  const { t } = useTranslation();
+  const initial = hexToRgb(defaultHex);
+  const [rgb, setRgb] = useState(initial);
+  const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+
+  function update(channel: 'r' | 'g' | 'b', raw: string) {
+    const next = clampByte(Number(raw));
+    setRgb((prev) => ({ ...prev, [channel]: next }));
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <span
+          className="inline-block size-10 shrink-0 rounded-md border border-sand"
+          style={{ background: hex }}
+          aria-hidden
+        />
+        <span className="font-mono text-sm text-muted">{hex}</span>
+        <input type="hidden" name="hex_code" value={hex} />
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {([
+          ['r', 'R'],
+          ['g', 'G'],
+          ['b', 'B'],
+        ] as const).map(([channel, label]) => (
+          <label key={channel} className="space-y-1 text-xs text-muted">
+            <span>{t(`common.rgb${label}`)}</span>
+            <Input
+              name={`rgb_${channel}`}
+              type="number"
+              min={0}
+              max={255}
+              step={1}
+              value={rgb[channel]}
+              onChange={(e) => update(channel, e.target.value)}
+              required
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function CrudTable({
   path,
@@ -47,9 +121,14 @@ function CrudTable({
 }) {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
+  const confirmDialog = useConfirm();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
   const [open, setOpen] = useState<Named | null | false>(false);
+  const [langTab, setLangTab] = useState<Lang>('en');
+  const [errors, setErrors] = useState<Partial<Record<Lang, string>>>({});
+  const [dirty, setDirty] = useState(false);
   const params = useMemo(
     () => ({
       page,
@@ -64,16 +143,51 @@ function CrudTable({
     queryKey: [path, params],
     queryFn: () => apiGet<Paginated<Named>>(path, params),
   });
-  const rows = query.data?.results || emptyPage<Named>().results;
+  const rows = (query.data?.results || emptyPage<Named>().results).filter((row) => {
+    if (!visibility || visibilityFilter === 'all') return true;
+    if (visibilityFilter === 'visible') return row.is_visible !== false;
+    return row.is_visible === false;
+  });
   const editing = open === false ? null : open;
+
+  function openForm(row: Named | null) {
+    setErrors({});
+    setDirty(false);
+    setLangTab('en');
+    setOpen(row);
+  }
+
+  function resetForm() {
+    setErrors({});
+    setDirty(false);
+    setLangTab('en');
+    setOpen(false);
+  }
+
+  async function closeForm() {
+    if (dirty) {
+      const ok = await confirmDialog({
+        title: t('common.discard'),
+        message: t('common.unsaved'),
+        variant: 'danger',
+        confirmLabel: t('common.discard'),
+      });
+      if (!ok) return;
+    }
+    resetForm();
+  }
 
   const save = useMutation({
     mutationFn: (form: FormData) => {
+      const name_en = String(form.get('name_en') || '').trim();
+      const name_ar = String(form.get('name_ar') || '').trim();
       const body = {
-        name_en: String(form.get('name_en')),
-        name_ar: String(form.get('name_ar')),
-        name_tr: String(form.get('name_tr')),
-        ...(color ? { hex_code: String(form.get('hex_code')) } : {}),
+        name_en,
+        name_ar,
+        // Turkish stays in the schema; mirror English so create requests still validate.
+        name_tr: name_en,
+        ...(color ? { hex_code: String(form.get('hex_code') || '#B4532A').toUpperCase() } : {}),
+        ...(visibility ? { is_visible: form.get('is_visible') === 'on' || form.get('is_visible') === 'true' } : {}),
         ...(extraBody ? extraBody(form) : {}),
       };
       return editing
@@ -82,7 +196,7 @@ function CrudTable({
     },
     onSuccess: () => {
       toast.success(t('common.save'));
-      setOpen(false);
+      resetForm();
       void qc.invalidateQueries({ queryKey: [path] });
     },
     onError: (e) => toastError(e, i18n.language),
@@ -108,7 +222,7 @@ function CrudTable({
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl">{title}</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Input
             placeholder={t('common.search')}
             value={search}
@@ -117,9 +231,22 @@ function CrudTable({
               setSearch(e.target.value);
             }}
           />
-          <Button onClick={() => setOpen(null)}>{t('common.add')}</Button>
+          <Button onClick={() => openForm(null)}>{t('common.add')}</Button>
         </div>
       </div>
+      {visibility ? (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {(['all', 'visible', 'hidden'] as const).map((key) => (
+            <Button
+              key={key}
+              variant={visibilityFilter === key ? 'primary' : 'outline'}
+              onClick={() => setVisibilityFilter(key)}
+            >
+              {t(`common.${key}`)}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       {query.isLoading ? (
         <Skeleton className="h-64" />
       ) : !rows.length ? (
@@ -129,26 +256,64 @@ function CrudTable({
           <table className="w-full text-sm">
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className="border-t border-sand">
+                <tr
+                  key={row.id}
+                  className={cn(
+                    'border-t border-sand',
+                    row.is_visible === false && 'opacity-60',
+                  )}
+                >
                   {color ? (
                     <td className="p-3">
                       <span className="inline-block size-5 rounded-full border" style={{ background: row.hex_code }} />
                     </td>
                   ) : null}
-                  <td className="p-3">{row.name_en}</td>
-                  <td className="p-3">{row.name_ar}</td>
+                  <td className="p-3">
+                    <div className="font-medium">{row.name_en}</div>
+                    {String(row.name_ar || '').trim() ? (
+                      <div className="text-muted" dir="rtl">{row.name_ar}</div>
+                    ) : (
+                      <Badge tone="amber">{t('common.missingAr')}</Badge>
+                    )}
+                    {row.is_visible === false ? (
+                      <div className="mt-1"><Badge tone="muted">{t('common.hidden')}</Badge></div>
+                    ) : null}
+                  </td>
                   {row.department ? <td className="p-3 text-muted">{row.department.name_en}</td> : null}
                   {row.code ? <td className="p-3 text-muted">{row.code}</td> : null}
                   {visibility ? (
                     <td className="p-3">
-                      <button type="button" onClick={() => toggle.mutate(row)}>
-                        {row.is_visible ? t('common.yes') : t('common.no')}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const ok = await confirmDialog({
+                            title: row.is_visible ? t('common.hidden') : t('common.visible'),
+                            message: row.is_visible ? t('common.hideConfirm') : t('common.showConfirm'),
+                            variant: (row.is_visible ? 'danger' : 'default') as 'danger' | 'default',
+                          });
+                          if (ok) toggle.mutate(row);
+                        }}
+                      >
+                        <Badge tone={row.is_visible === false ? 'muted' : 'green'}>
+                          {row.is_visible === false ? t('common.hidden') : t('common.visible')}
+                        </Badge>
                       </button>
                     </td>
                   ) : null}
                   <td className="p-3 text-end">
-                    <Button variant="ghost" onClick={() => setOpen(row)}>{t('common.edit')}</Button>
-                    <Button variant="ghost" onClick={() => { if (confirm(t('common.delete'))) remove.mutate(row.id); }}>
+                    <Button variant="ghost" onClick={() => openForm(row)}>{t('common.edit')}</Button>
+                    <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        const ok = await confirmDialog({
+                          title: t('common.delete'),
+                          message: t('common.deleteConfirm'),
+                          variant: 'danger',
+                          confirmLabel: t('common.delete'),
+                        });
+                        if (ok) remove.mutate(row.id);
+                      }}
+                    >
                       {t('common.delete')}
                     </Button>
                   </td>
@@ -163,22 +328,62 @@ function CrudTable({
         {t('common.page')} {page} {t('common.of')} {query.data?.totalPages || 1}
         <Button variant="outline" disabled={page >= (query.data?.totalPages || 1)} onClick={() => setPage((p) => p + 1)}>›</Button>
       </div>
-      <Drawer open={open !== false} title={editing ? t('common.edit') : t('common.add')} onClose={() => setOpen(false)}>
+      <Dialog
+        open={open !== false}
+        title={editing ? t('common.edit') : t('common.add')}
+        onClose={() => void closeForm()}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => void closeForm()}>{t('common.cancel')}</Button>
+            <Button type="submit" form="catalog-form" disabled={save.isPending}>
+              {save.isPending ? <span className="inline-block size-4 animate-spin rounded-full border-2 border-current border-r-transparent" /> : null}
+              {t('common.save')}
+            </Button>
+          </div>
+        }
+      >
         <form
+          key={editing?.id || 'new'}
+          id="catalog-form"
           className="space-y-3"
+          onChange={() => setDirty(true)}
           onSubmit={(e: FormEvent<HTMLFormElement>) => {
             e.preventDefault();
-            save.mutate(new FormData(e.currentTarget));
+            const form = new FormData(e.currentTarget);
+            const next: Partial<Record<Lang, string>> = {};
+            if (!String(form.get('name_en') || '').trim()) next.en = t('common.required');
+            if (!String(form.get('name_ar') || '').trim()) next.ar = t('common.required');
+            setErrors(next);
+            if (next.en || next.ar) {
+              setLangTab(next.en ? 'en' : 'ar');
+              return;
+            }
+            save.mutate(form);
           }}
         >
-          <Input name="name_en" defaultValue={editing?.name_en} placeholder={t('common.nameEn')} required />
-          <Input name="name_ar" defaultValue={editing?.name_ar} placeholder={t('common.nameAr')} required />
-          <Input name="name_tr" defaultValue={editing?.name_tr} placeholder={t('common.nameTr')} required />
-          {color ? <Input name="hex_code" defaultValue={editing?.hex_code || '#B4532A'} required /> : null}
+          <LangTabs
+            value={langTab}
+            onChange={setLangTab}
+            errors={{ en: Boolean(errors.en), ar: Boolean(errors.ar) }}
+          />
+          <div className={langTab === 'en' ? 'space-y-1' : 'hidden'}>
+            <Input name="name_en" defaultValue={editing?.name_en} placeholder={t('common.nameEn')} />
+            {errors.en ? <p className="text-xs text-red-700">{errors.en}</p> : null}
+          </div>
+          <div className={langTab === 'ar' ? 'space-y-1' : 'hidden'} dir="rtl">
+            <Input name="name_ar" defaultValue={editing?.name_ar} placeholder={t('common.nameAr')} className="text-right" />
+            {errors.ar ? <p className="text-xs text-red-700">{errors.ar}</p> : null}
+          </div>
+          {color ? <ColorRgbFields defaultHex={editing?.hex_code || '#B4532A'} /> : null}
+          {visibility ? (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="is_visible" defaultChecked={editing?.is_visible !== false} />
+              {t('common.visibleOnStorefront')}
+            </label>
+          ) : null}
           {extraForm?.(editing)}
-          <Button className="w-full" type="submit">{t('common.save')}</Button>
         </form>
-      </Drawer>
+      </Dialog>
     </div>
   );
 }

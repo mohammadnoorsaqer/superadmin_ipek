@@ -39,14 +39,32 @@
     "loading": "Loading…",
     "nameEn": "Name (EN)",
     "nameAr": "Name (AR)",
-    "nameTr": "Name (TR)",
     "visible": "Visible",
     "active": "Active",
     "actions": "Actions",
     "page": "Page",
     "of": "of",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "all": "All",
+    "hidden": "Hidden",
+    "missingAr": "Missing AR",
+    "required": "Required",
+    "description": "Description",
+    "price": "Price",
+    "category": "Category",
+    "brand": "Brand",
+    "season": "Season",
+    "fullEdit": "Full edit",
+    "visibleOnStorefront": "Visible on storefront",
+    "rgbR": "R",
+    "rgbG": "G",
+    "rgbB": "B",
+    "discard": "Discard changes",
+    "unsaved": "You have unsaved changes. Discard them?",
+    "deleteConfirm": "Delete this item? This cannot be undone.",
+    "hideConfirm": "Hide this item from the storefront?",
+    "showConfirm": "Show this item on the storefront?"
   },
   "dash": {
     "ordersToday": "Orders today",
@@ -64,7 +82,11 @@
     "payment": "Payment",
     "source": "Source",
     "guest": "Guest",
-    "proof": "Cliq proof"
+    "proof": "Cliq proof",
+    "cancelConfirm": "Cancel this order?"
+  },
+  "discounts": {
+    "endConfirm": "End this discount now?"
   },
   "users": {
     "deactivate": "Deactivate",

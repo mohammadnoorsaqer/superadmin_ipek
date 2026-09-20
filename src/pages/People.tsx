@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { apiGet, apiSend, toastError } from '../lib/api';
 import { emptyPage, type Paginated } from '../lib/utils';
 import { Badge, Button, Input, Skeleton } from '../components/ui';
+import { useConfirm } from '../lib/confirm';
 
 type User = {
   id: string;
@@ -19,6 +20,7 @@ type User = {
 export function UsersPage() {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
+  const confirmDialog = useConfirm();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const params = useMemo(() => ({ page, limit: 20, search: search || undefined }), [page, search]);
@@ -67,10 +69,30 @@ export function UsersPage() {
                   <td className="p-3"><Badge>{row.role}</Badge></td>
                   <td className="p-3"><Badge tone={row.is_active ? 'green' : 'red'}>{String(row.is_active)}</Badge></td>
                   <td className="p-3 text-end">
-                    <Button variant="ghost" onClick={() => confirm(t('common.confirm')) && act.mutate(row)}>
+                    <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        const ok = await confirmDialog({
+                          title: t('common.confirm'),
+                          message: row.is_active ? t('users.deactivate') : t('users.activate'),
+                          variant: 'danger',
+                        });
+                        if (ok) act.mutate(row);
+                      }}
+                    >
                       {row.is_active ? t('users.deactivate') : t('users.activate')}
                     </Button>
-                    <Button variant="ghost" onClick={() => confirm(t('users.promote')) && role.mutate(row)}>
+                    <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        const ok = await confirmDialog({
+                          title: t('users.promote'),
+                          message: t('users.role'),
+                          variant: 'danger',
+                        });
+                        if (ok) role.mutate(row);
+                      }}
+                    >
                       {t('users.role')}
                     </Button>
                   </td>
@@ -89,6 +111,7 @@ type Note = { id: string; title_en: string; created_at: string };
 export function NotificationsPage() {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
+  const confirmDialog = useConfirm();
   const list = useQuery({
     queryKey: ['notifications'],
     queryFn: () => apiGet<Paginated<Note>>('/notifications', { limit: 30 }),
@@ -100,20 +123,31 @@ export function NotificationsPage() {
         className="space-y-3 rounded-xl border border-sand bg-white/60 p-5"
         onSubmit={async (e) => {
           e.preventDefault();
-          if (!confirm(t('notify.confirm'))) return;
-          const form = new FormData(e.currentTarget);
+          const formEl = e.currentTarget;
+          const form = new FormData(formEl);
+          const ok = await confirmDialog({
+            title: t('notify.broadcast'),
+            message: t('notify.confirm'),
+            variant: 'danger',
+            confirmLabel: t('notify.sendAll'),
+          });
+          if (!ok) return;
+          const title_en = String(form.get('title_en') || '').trim();
+          const title_ar = String(form.get('title_ar') || '').trim();
+          const message_en = String(form.get('message_en') || '').trim();
+          const message_ar = String(form.get('message_ar') || '').trim();
           try {
             await apiSend('/notifications/broadcast', 'post', {
-              title_en: String(form.get('title_en')),
-              title_ar: String(form.get('title_ar')),
-              title_tr: String(form.get('title_tr')),
-              message_en: String(form.get('message_en')),
-              message_ar: String(form.get('message_ar')),
-              message_tr: String(form.get('message_tr')),
+              title_en,
+              title_ar,
+              title_tr: title_en,
+              message_en,
+              message_ar,
+              message_tr: message_en,
             });
             toast.success(t('notify.sendAll'));
             void qc.invalidateQueries({ queryKey: ['notifications'] });
-            e.currentTarget.reset();
+            formEl.reset();
           } catch (err) {
             toastError(err, i18n.language);
           }
@@ -121,11 +155,9 @@ export function NotificationsPage() {
       >
         <h1 className="text-2xl">{t('notify.broadcast')}</h1>
         <Input name="title_en" placeholder="Title EN" required />
-        <Input name="title_ar" placeholder="Title AR" required />
-        <Input name="title_tr" placeholder="Title TR" required />
+        <Input name="title_ar" placeholder="Title AR" className="text-right" dir="rtl" required />
         <textarea name="message_en" className="w-full rounded-md border border-sand p-2" placeholder="Message EN" required />
-        <textarea name="message_ar" className="w-full rounded-md border border-sand p-2" placeholder="Message AR" required />
-        <textarea name="message_tr" className="w-full rounded-md border border-sand p-2" placeholder="Message TR" required />
+        <textarea name="message_ar" className="w-full rounded-md border border-sand p-2 text-right" dir="rtl" placeholder="Message AR" required />
         <Button type="submit">{t('notify.sendAll')}</Button>
       </form>
       <div>

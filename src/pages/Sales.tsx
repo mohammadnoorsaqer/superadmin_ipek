@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { apiGet, apiSend, fileUrl, toastError } from '../lib/api';
 import { emptyPage, type Paginated } from '../lib/utils';
 import { Badge, Button, Drawer, Input, Skeleton } from '../components/ui';
+import { useConfirm } from '../lib/confirm';
 
 type Order = {
   id: string;
@@ -42,6 +43,7 @@ const tone: Record<string, 'amber' | 'green' | 'red' | 'muted'> = {
 export function OrdersPage() {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
+  const confirmDialog = useConfirm();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -179,7 +181,18 @@ export function OrdersPage() {
               </Button>
             ) : null}
             {open.status === 'pending' || open.status === 'confirmed' ? (
-              <Button className="w-full" variant="danger" onClick={() => { if (confirm(t('common.confirm'))) ship.mutate({ id: open.id, status: 'cancelled' }); }}>
+              <Button
+                className="w-full"
+                variant="danger"
+                onClick={async () => {
+                  const ok = await confirmDialog({
+                    title: t('common.confirm'),
+                    message: t('orders.cancelConfirm', { defaultValue: 'Cancel this order?' }),
+                    variant: 'danger',
+                  });
+                  if (ok) ship.mutate({ id: open.id, status: 'cancelled' });
+                }}
+              >
                 cancelled
               </Button>
             ) : null}
@@ -285,6 +298,7 @@ type Discount = {
 export function DiscountsPage() {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
+  const confirmDialog = useConfirm();
   const list = useQuery({
     queryKey: ['discounts'],
     queryFn: () => apiGet<Paginated<Discount>>('/discounts', { limit: 50 }),
@@ -315,7 +329,19 @@ export function DiscountsPage() {
                   <td className="p-3">{new Date(row.start_date).toLocaleDateString()} → {new Date(row.end_date).toLocaleDateString()}</td>
                   <td className="p-3"><Badge tone={row.is_active ? 'green' : 'muted'}>{String(row.is_active)}</Badge></td>
                   <td className="p-3">
-                    <Button variant="ghost" onClick={() => { if (confirm(t('common.confirm'))) endNow.mutate(row); }}>End now</Button>
+                    <Button
+                      variant="ghost"
+                      onClick={async () => {
+                        const ok = await confirmDialog({
+                          title: t('common.confirm'),
+                          message: t('discounts.endConfirm', { defaultValue: 'End this discount now?' }),
+                          variant: 'danger',
+                        });
+                        if (ok) endNow.mutate(row);
+                      }}
+                    >
+                      End now
+                    </Button>
                   </td>
                 </tr>
               ))}

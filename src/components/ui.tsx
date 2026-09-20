@@ -1,13 +1,19 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useRef,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from 'react';
 import { cn } from '../lib/utils';
 
-export function Button({
-  className,
-  variant = 'primary',
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'ghost' | 'danger' | 'outline';
-}) {
+export const Button = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: 'primary' | 'ghost' | 'danger' | 'outline';
+  }
+>(function Button({ className, variant = 'primary', ...props }, ref) {
   const styles = {
     primary: 'bg-ink text-cream hover:bg-accent',
     ghost: 'text-muted hover:text-ink hover:bg-sand/60',
@@ -16,6 +22,7 @@ export function Button({
   }[variant];
   return (
     <button
+      ref={ref}
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm transition disabled:opacity-50',
         styles,
@@ -24,7 +31,7 @@ export function Button({
       {...props}
     />
   );
-}
+});
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
@@ -64,23 +71,57 @@ export function Dialog({
   title,
   children,
   onClose,
+  footer,
+  wide,
 }: {
   open: boolean;
   title: string;
   children: ReactNode;
   onClose: () => void;
+  footer?: ReactNode;
+  wide?: boolean;
 }) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeRef.current();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-cream p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 sm:items-center sm:p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className={cn(
+          'flex max-h-[92vh] w-full flex-col rounded-t-xl bg-cream shadow-xl sm:rounded-xl',
+          wide ? 'max-w-3xl' : 'max-w-lg',
+        )}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-sand px-5 py-4">
           <h2 className="text-lg">{title}</h2>
-          <button type="button" onClick={onClose} className="text-muted">
+          <button type="button" onClick={onClose} className="text-muted" aria-label="Close">
             ×
           </button>
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {footer ? (
+          <div className="sticky bottom-0 shrink-0 border-t border-sand bg-cream px-5 py-4">
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -109,6 +150,42 @@ export function Drawer({
         </div>
         {children}
       </div>
+    </div>
+  );
+}
+
+export type Lang = 'en' | 'ar';
+
+export function LangTabs({
+  value,
+  onChange,
+  errors,
+}: {
+  value: Lang;
+  onChange: (lang: Lang) => void;
+  errors?: Partial<Record<Lang, boolean>>;
+}) {
+  return (
+    <div className="flex gap-2 border-b border-sand pb-2">
+      {([
+        ['en', 'English'],
+        ['ar', 'العربية'],
+      ] as const).map(([lang, label]) => (
+        <button
+          key={lang}
+          type="button"
+          onClick={() => onChange(lang)}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm',
+            value === lang ? 'bg-ink text-cream' : 'text-muted',
+          )}
+        >
+          {label}
+          {errors?.[lang] ? (
+            <span className="size-1.5 rounded-full bg-red-600" aria-label="has errors" />
+          ) : null}
+        </button>
+      ))}
     </div>
   );
 }

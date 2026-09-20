@@ -39,14 +39,32 @@
     "loading": "جاري التحميل…",
     "nameEn": "الاسم (إنجليزي)",
     "nameAr": "الاسم (عربي)",
-    "nameTr": "الاسم (تركي)",
     "visible": "ظاهر",
     "active": "نشط",
     "actions": "إجراءات",
     "page": "صفحة",
     "of": "من",
     "yes": "نعم",
-    "no": "لا"
+    "no": "لا",
+    "all": "الكل",
+    "hidden": "مخفي",
+    "missingAr": "بدون عربي",
+    "required": "مطلوب",
+    "description": "الوصف",
+    "price": "السعر",
+    "category": "التصنيف",
+    "brand": "العلامة",
+    "season": "الموسم",
+    "fullEdit": "تعديل كامل",
+    "visibleOnStorefront": "ظاهر في المتجر",
+    "rgbR": "R",
+    "rgbG": "G",
+    "rgbB": "B",
+    "discard": "تجاهل التغييرات",
+    "unsaved": "لديك تغييرات غير محفوظة. هل تريد تجاهلها؟",
+    "deleteConfirm": "حذف هذا العنصر؟ لا يمكن التراجع.",
+    "hideConfirm": "إخفاء هذا العنصر من المتجر؟",
+    "showConfirm": "إظهار هذا العنصر في المتجر؟"
   },
   "dash": {
     "ordersToday": "طلبات اليوم",
@@ -64,7 +82,11 @@
     "payment": "الدفع",
     "source": "المصدر",
     "guest": "ضيف",
-    "proof": "إثبات كليك"
+    "proof": "إثبات كليك",
+    "cancelConfirm": "إلغاء هذا الطلب؟"
+  },
+  "discounts": {
+    "endConfirm": "إنهاء هذا الخصم الآن؟"
   },
   "users": {
     "deactivate": "تعطيل",

@@ -5,7 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { apiGet, apiSend, toastError, uploadImage } from '../lib/api';
 import { emptyPage, type Paginated } from '../lib/utils';
-import { Badge, Button, Input, Skeleton } from '../components/ui';
+import { Badge, Button, Dialog, Input, LangTabs, Skeleton, type Lang } from '../components/ui';
+import { useConfirm } from '../lib/confirm';
 
 type Product = {
   id: string;
@@ -40,11 +41,79 @@ type Variant = {
 
 type Named = { id: string; name_en: string; name_ar?: string; hex_code?: string; code?: string };
 
+function localizedBody(form: FormData) {
+  const name_en = String(form.get('name_en') || '').trim();
+  const description_en = String(form.get('description_en') || '');
+  return {
+    name_en,
+    name_ar: String(form.get('name_ar') || '').trim(),
+    // Turkish stays in the schema; mirror English so create requests still validate.
+    name_tr: name_en,
+    description_en,
+    description_ar: String(form.get('description_ar') || ''),
+    description_tr: description_en,
+  };
+}
+
+function localizedErrors(form: FormData, message: string) {
+  const errors: Partial<Record<Lang, string>> = {};
+  if (!String(form.get('name_en') || '').trim()) errors.en = message;
+  if (!String(form.get('name_ar') || '').trim()) errors.ar = message;
+  return errors;
+}
+
+function LocalizedFields({
+  values,
+  lang,
+  onLang,
+  errors,
+}: {
+  values?: Pick<Product, 'name_en' | 'name_ar' | 'description_en' | 'description_ar'>;
+  lang: Lang;
+  onLang: (lang: Lang) => void;
+  errors: Partial<Record<Lang, string>>;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-3">
+      <LangTabs value={lang} onChange={onLang} errors={{ en: Boolean(errors.en), ar: Boolean(errors.ar) }} />
+      <div className={lang === 'en' ? 'space-y-2' : 'hidden'}>
+        <Input name="name_en" defaultValue={values?.name_en} placeholder={t('common.nameEn')} />
+        {errors.en ? <p className="text-xs text-red-700">{errors.en}</p> : null}
+        <textarea
+          name="description_en"
+          defaultValue={values?.description_en}
+          rows={3}
+          className="w-full rounded-md border border-sand p-2 text-sm"
+          placeholder={`${t('common.description')} (EN)`}
+        />
+      </div>
+      <div className={lang === 'ar' ? 'space-y-2' : 'hidden'} dir="rtl">
+        <Input
+          name="name_ar"
+          defaultValue={values?.name_ar}
+          placeholder={t('common.nameAr')}
+          className="text-right"
+        />
+        {errors.ar ? <p className="text-xs text-red-700">{errors.ar}</p> : null}
+        <textarea
+          name="description_ar"
+          defaultValue={values?.description_ar}
+          rows={3}
+          className="w-full rounded-md border border-sand p-2 text-right text-sm"
+          placeholder={`${t('common.description')} (AR)`}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ProductsPage() {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [editId, setEditId] = useState<string | null>(null);
   const params = useMemo(
     () => ({ page, limit: 20, search: search || undefined, includeHidden: true }),
     [page, search],
@@ -86,7 +155,14 @@ export function ProductsPage() {
                       <img src={row.images[0].image_url} alt="" className="h-12 w-10 object-cover" />
                     ) : <div className="h-12 w-10 bg-sand" />}
                   </td>
-                  <td className="p-3">{row.name_en}</td>
+                  <td className="p-3">
+                    <div className="font-medium">{row.name_en}</div>
+                    {String(row.name_ar || '').trim() ? (
+                      <div className="text-muted" dir="rtl">{row.name_ar}</div>
+                    ) : (
+                      <Badge tone="amber">{t('common.missingAr')}</Badge>
+                    )}
+                  </td>
                   <td className="p-3 text-muted">{row.category?.name_en}</td>
                   <td className="p-3">{row.base_price}</td>
                   <td className="p-3">{row.sales_count}</td>
@@ -95,7 +171,12 @@ export function ProductsPage() {
                       <Badge tone={row.is_active ? 'green' : 'muted'}>{row.is_active ? t('common.active') : 'off'}</Badge>
                     </button>
                   </td>
-                  <td className="p-3"><Link to={`/products/${row.id}`}>{t('common.edit')}</Link></td>
+                  <td className="p-3 text-end">
+                    <Button variant="ghost" onClick={() => setEditId(row.id)}>{t('common.edit')}</Button>
+                    <Link to={`/products/${row.id}`} className="ms-2 text-sm text-muted underline">
+                      {t('common.fullEdit')}
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -107,7 +188,152 @@ export function ProductsPage() {
         {page} / {list.data?.totalPages || 1}
         <Button variant="outline" disabled={page >= (list.data?.totalPages || 1)} onClick={() => setPage((p) => p + 1)}>›</Button>
       </div>
+      <EditProductModal id={editId} onClose={() => setEditId(null)} />
     </div>
+  );
+}
+
+function EditProductModal({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const { t, i18n } = useTranslation();
+  const qc = useQueryClient();
+  const confirmDialog = useConfirm();
+  const [lang, setLang] = useState<Lang>('en');
+  const [errors, setErrors] = useState<Partial<Record<Lang, string>>>({});
+  const [dirty, setDirty] = useState(false);
+  const cats = useQuery({
+    queryKey: ['categories-all'],
+    queryFn: () => apiGet<Paginated<Named>>('/categories', { limit: 100, includeHidden: true }),
+    enabled: Boolean(id),
+  });
+  const brands = useQuery({
+    queryKey: ['brands-all'],
+    queryFn: () => apiGet<Paginated<Named>>('/brands', { limit: 100 }),
+    enabled: Boolean(id),
+  });
+  const product = useQuery({
+    queryKey: ['product', id],
+    queryFn: () => apiGet<Product>(`/products/${id}`, { includeHidden: true }),
+    enabled: Boolean(id),
+  });
+  const p = product.data;
+
+  function reset() {
+    setErrors({});
+    setDirty(false);
+    setLang('en');
+    onClose();
+  }
+
+  const save = useMutation({
+    mutationFn: (form: FormData) =>
+      apiSend<Product>(`/products/${id}`, 'put', {
+        ...localizedBody(form),
+        category_id: String(form.get('category_id')),
+        brand_id: String(form.get('brand_id') || '') || null,
+        base_price: Number(form.get('base_price')),
+        is_active: form.get('is_active') === 'on',
+      }),
+    onSuccess: () => {
+      toast.success(t('common.save'));
+      void qc.invalidateQueries({ queryKey: ['products'] });
+      void qc.invalidateQueries({ queryKey: ['product', id] });
+      reset();
+    },
+    onError: (e) => toastError(e, i18n.language),
+  });
+
+  async function close() {
+    if (dirty && !save.isPending) {
+      const ok = await confirmDialog({
+        title: t('common.discard'),
+        message: t('common.unsaved'),
+        variant: 'danger',
+        confirmLabel: t('common.discard'),
+      });
+      if (!ok) return;
+    }
+    reset();
+  }
+
+  return (
+    <Dialog
+      open={Boolean(id)}
+      wide
+      title={p?.name_en || t('common.edit')}
+      onClose={() => void close()}
+      footer={
+        <div className="flex items-center justify-between gap-2">
+          <Link to={`/products/${id}`} className="text-sm text-muted underline">
+            {t('common.fullEdit')}
+          </Link>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => void close()}>{t('common.cancel')}</Button>
+            <Button type="submit" form="product-core-form" disabled={save.isPending || !p}>
+              {save.isPending ? (
+                <span className="inline-block size-4 animate-spin rounded-full border-2 border-current border-r-transparent" />
+              ) : null}
+              {t('common.save')}
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      {!p ? (
+        <Skeleton className="h-64" />
+      ) : (
+        <form
+          key={p.id}
+          id="product-core-form"
+          className="space-y-4"
+          onChange={() => setDirty(true)}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            const next = localizedErrors(form, t('common.required'));
+            setErrors(next);
+            if (next.en || next.ar) {
+              setLang(next.en ? 'en' : 'ar');
+              return;
+            }
+            save.mutate(form);
+          }}
+        >
+          <LocalizedFields values={p} lang={lang} onLang={setLang} errors={errors} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm">
+              {t('common.price')}
+              <Input name="base_price" type="number" step="0.01" min={0} defaultValue={p.base_price} required />
+            </label>
+            <label className="text-sm">
+              {t('common.category')}
+              <select
+                name="category_id"
+                defaultValue={p.category_id}
+                className="w-full rounded-md border border-sand bg-white px-3 py-2 text-sm"
+                required
+              >
+                {(cats.data?.results || []).map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
+              </select>
+            </label>
+            <label className="text-sm">
+              {t('common.brand')}
+              <select
+                name="brand_id"
+                defaultValue={p.brand_id || ''}
+                className="w-full rounded-md border border-sand bg-white px-3 py-2 text-sm"
+              >
+                <option value="">—</option>
+                {(brands.data?.results || []).map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 self-end text-sm">
+              <input type="checkbox" name="is_active" defaultChecked={p.is_active} />
+              {t('common.active')}
+            </label>
+          </div>
+        </form>
+      )}
+    </Dialog>
   );
 }
 
@@ -132,12 +358,7 @@ export function ProductEditPage() {
     mutationFn: async (form: FormData) => {
       const body = {
         sku: String(form.get('sku')),
-        name_en: String(form.get('name_en')),
-        name_ar: String(form.get('name_ar')),
-        name_tr: String(form.get('name_tr')),
-        description_en: String(form.get('description_en') || ''),
-        description_ar: String(form.get('description_ar') || ''),
-        description_tr: String(form.get('description_tr') || ''),
+        ...localizedBody(form),
         category_id: String(form.get('category_id')),
         brand_id: String(form.get('brand_id') || '') || null,
         season_id: String(form.get('season_id') || '') || null,
@@ -159,39 +380,56 @@ export function ProductEditPage() {
   });
 
   const p = product.data;
+  const [langTab, setLangTab] = useState<Lang>('en');
+  const [errors, setErrors] = useState<Partial<Record<Lang, string>>>({});
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl">{isNew ? t('common.add') : p?.name_en}</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl">{isNew ? t('common.add') : p?.name_en}</h1>
+        {!isNew && p && !String(p.name_ar || '').trim() ? (
+          <Badge tone="amber">{t('common.missingAr')}</Badge>
+        ) : null}
+      </div>
       <form
-        className="grid gap-3 rounded-xl border border-sand bg-white/60 p-5 sm:grid-cols-2"
+        key={p?.id || 'new'}
+        className="space-y-4 rounded-xl border border-sand bg-white/60 p-5"
         onSubmit={(e) => {
           e.preventDefault();
-          save.mutate(new FormData(e.currentTarget));
+          const form = new FormData(e.currentTarget);
+          const next = localizedErrors(form, t('common.required'));
+          setErrors(next);
+          if (next.en || next.ar) {
+            setLangTab(next.en ? 'en' : 'ar');
+            return;
+          }
+          save.mutate(form);
         }}
       >
-        <Input name="sku" defaultValue={p?.sku} placeholder="SKU" required />
-        <Input name="base_price" type="number" step="0.01" defaultValue={p?.base_price} placeholder="Price" required />
-        <Input name="name_en" defaultValue={p?.name_en} placeholder={t('common.nameEn')} required />
-        <Input name="name_ar" defaultValue={p?.name_ar} placeholder={t('common.nameAr')} required />
-        <Input name="name_tr" defaultValue={p?.name_tr} placeholder={t('common.nameTr')} required />
-        <select name="category_id" defaultValue={p?.category_id} className="rounded-md border border-sand px-3 py-2" required>
-          <option value="">Category</option>
-          {(cats.data?.results || []).map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
-        </select>
-        <select name="brand_id" defaultValue={p?.brand_id} className="rounded-md border border-sand px-3 py-2">
-          <option value="">Brand</option>
-          {(brands.data?.results || []).map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
-        </select>
-        <select name="season_id" defaultValue={p?.season_id} className="rounded-md border border-sand px-3 py-2">
-          <option value="">Season</option>
-          {(seasons.data?.results || []).map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
-        </select>
-        <textarea name="description_en" defaultValue={p?.description_en} className="rounded-md border border-sand p-2 sm:col-span-2" placeholder="Description EN" />
-        <textarea name="description_ar" defaultValue={p?.description_ar} className="rounded-md border border-sand p-2 sm:col-span-2" placeholder="Description AR" />
-        <textarea name="description_tr" defaultValue={p?.description_tr} className="rounded-md border border-sand p-2 sm:col-span-2" placeholder="Description TR" />
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" defaultChecked={p?.is_active ?? true} /> {t('common.active')}</label>
-        <Button type="submit" className="sm:col-span-2">{t('common.save')}</Button>
+        <LocalizedFields values={p} lang={langTab} onLang={setLangTab} errors={errors} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input name="sku" defaultValue={p?.sku} placeholder="SKU" required />
+          <Input name="base_price" type="number" step="0.01" min={0} defaultValue={p?.base_price} placeholder={t('common.price')} required />
+          <select name="category_id" defaultValue={p?.category_id} className="rounded-md border border-sand px-3 py-2 text-sm" required>
+            <option value="">{t('common.category')}</option>
+            {(cats.data?.results || []).map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
+          </select>
+          <select name="brand_id" defaultValue={p?.brand_id} className="rounded-md border border-sand px-3 py-2 text-sm">
+            <option value="">{t('common.brand')}</option>
+            {(brands.data?.results || []).map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
+          </select>
+          <select name="season_id" defaultValue={p?.season_id} className="rounded-md border border-sand px-3 py-2 text-sm">
+            <option value="">{t('common.season')}</option>
+            {(seasons.data?.results || []).map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
+          </select>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="is_active" defaultChecked={p?.is_active ?? true} /> {t('common.active')}</label>
+        </div>
+        <Button type="submit" className="w-full" disabled={save.isPending}>
+          {save.isPending ? (
+            <span className="inline-block size-4 animate-spin rounded-full border-2 border-current border-r-transparent" />
+          ) : null}
+          {t('common.save')}
+        </Button>
       </form>
       {!isNew && p ? (
         <>
