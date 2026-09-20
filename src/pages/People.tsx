@@ -106,7 +106,19 @@ export function UsersPage() {
   );
 }
 
-type Note = { id: string; title_en: string; created_at: string };
+type Note = {
+  id: string;
+  title_en: string;
+  created_at?: string;
+  createdAt?: string;
+};
+
+function formatNoteDate(note: Note) {
+  const raw = note.created_at || note.createdAt;
+  if (!raw) return '';
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+}
 
 export function NotificationsPage() {
   const { t, i18n } = useTranslation();
@@ -165,7 +177,9 @@ export function NotificationsPage() {
         {(list.data?.results || []).map((n) => (
           <p key={n.id} className="border-b border-sand py-2 text-sm">
             {n.title_en}
-            <span className="ms-2 text-muted">{new Date(n.created_at).toLocaleString()}</span>
+            {formatNoteDate(n) ? (
+              <span className="ms-2 text-muted">{formatNoteDate(n)}</span>
+            ) : null}
           </p>
         ))}
       </div>
